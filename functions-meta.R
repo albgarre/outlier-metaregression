@@ -8,6 +8,12 @@ fit_big <- function(d) {
     lm(logD ~ T0, data = d)
 }
 
+#' Meta-regression model (with random)
+#' 
+fit_big_random <- function(d) {
+  lmer(logD ~ (1|full_ref) + T0, data = d)
+}
+
 #' Meta-regression model leaving one out according to column var_out
 #' 
 fit_one_out <- function(d, var_out) {

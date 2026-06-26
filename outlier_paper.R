@@ -6,6 +6,7 @@ library(readxl)
 library(broom)
 library(plotly)
 library(ellipse)
+library(lme4)
 
 library(ggrepel)
 library(RColorBrewer)
@@ -59,6 +60,7 @@ d_2 <- d_out %>%  # Data after the 2nd round
 my_data <- full_data
 
 big_model <- fit_big(my_data)
+big_model_random <- fit_big_random(my_data)
 
 ## Fit leaving one ref out
 
@@ -92,7 +94,7 @@ p2 <- get_RESRATIO(big_model, models_ref_out) %>%
 ## Figure 2
 
 p <- cowplot::plot_grid(p1, p2, labels = "AUTO")
-
+p
 ggsave(p, filename = "Figure2.png",
        width = 15, height = 6)
 

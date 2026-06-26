@@ -4,7 +4,10 @@ library(readxl)
 library(RColorBrewer)
 library(broom)
 library(rstan)
-
+library(lme4)
+library(ggpubr)
+library(wesanderson)
+library(ggsci)
 
 # Importing the data
 
@@ -37,7 +40,52 @@ d_2 <- d_out %>%  # Data after the 2nd round
 ggplot(d_final) +
     geom_point(aes(temp, logD))
 
-## Figure 1
+## Table 1
+
+list(
+  full_data,
+  d_1, 
+  d_2,
+  d_final
+) %>%
+  map(., 
+      ~ nls(logD ~ logDref - (temp - 60)/z,
+            start = list(logDref = 0, z = 5),
+            data = .)
+  ) %>%
+  map(tidy)
+
+list(
+  full_data,
+  d_1, 
+  d_2,
+  d_final
+) %>%
+  map(., 
+      ~ lmer(logD ~ temp + (1|full_ref),
+             data = .)
+  ) %>%
+  map(fixef) %>%
+  map(., ~ -1/.[["temp"]])
+
+
+models <- list(
+  full_data,
+  d_1, 
+  d_2,
+  d_final
+) %>%
+  map(., 
+      ~ lmer(logD ~ temp + (1|full_ref),
+             data = .)
+  ) %>%
+  map(fixef)
+
+models
+
+## Figure 1 
+
+## Nonlinear
 
 point_cols <- brewer.pal(9, "Set1")
 line_cols <- brewer.pal(4, "Blues")
@@ -52,17 +100,17 @@ d_refsout_plot <- d_refsout %>%
             )
         )
 
-p <- full_data %>% 
+p1 <- full_data %>% 
     filter(is.na(omit)) %>%
     ggplot() +
     geom_point(aes(x = temp, y = logD),
                shape = 1, size = 4) +
     geom_point(aes(x = temp, y = logD, colour = full_ref, shape = omit),
                data = d_refsout_plot, size = 4) +
-    scale_shape_manual(values = c(16, 15, 17, 18, 4)) +
+    scale_shape_manual(values = c(16, 15, 17, 18, 7)) +
     scale_color_manual(values = point_cols)
 
-p <- p + 
+p1 <- p1 + 
     geom_smooth(aes(x = temp, y = logD), method = "lm",
                 se = FALSE,
                 data = full_data,
@@ -105,25 +153,79 @@ p <- p +
           # panel.border = element_rect(colour = "green")
           ) 
 
-p
+p1
 
-ggsave(p, filename = "Figure1.png",
-       width = 12, height = 6)
+# ggsave(p, filename = "Figure1.png",
+#        width = 12, height = 6)
 
-## Table 1
+## 
 
-list(
-    full_data,
-    d_1, 
-    d_2,
-    d_final
-) %>%
-    map(., 
-        ~ nls(logD ~ logDref - (temp - 60)/z,
-              start = list(logDref = 0, z = 5),
-              data = .)
-        ) %>%
-    map(tidy)
+p2 <- full_data %>% 
+  filter(is.na(omit)) %>%
+  ggplot() +
+  geom_point(aes(x = temp, y = logD),
+             shape = 1, size = 4) +
+  geom_point(aes(x = temp, y = logD, colour = full_ref, shape = omit),
+             data = d_refsout_plot, size = 4) +
+  scale_shape_manual(values = c(16, 15, 17, 18, 7)) +
+  scale_color_manual(values = point_cols)
+
+p2 <- p2 + 
+  geom_line(aes(x, y),
+            colour = line_cols[1],
+            # color = "black",
+            linetype = 1,
+            size = 1,
+            tibble(x = c(20, 100),
+                   y = models[[1]][1] + x*models[[1]][2]
+            )
+  ) +
+  geom_line(aes(x, y),
+            colour = line_cols[2],
+            # color = "black",
+            linetype = 1,
+            size = 1,
+            tibble(x = c(20, 100),
+                   y = models[[2]][1] + x*models[[2]][2]
+            )
+  ) +
+  geom_line(aes(x, y),
+            colour = line_cols[3],
+            # color = "black",
+            linetype = 1,
+            size = 1,
+            tibble(x = c(20, 100),
+                   y = models[[3]][1] + x*models[[3]][2]
+            )
+  ) +
+  geom_line(aes(x, y),
+            colour = line_cols[4],
+            # color = "black",
+            linetype = 1,
+            size = 1,
+            tibble(x = c(20, 100),
+                   y = models[[4]][1] + x*models[[4]][2]
+            )
+            ) +
+  xlab("Temperature (ºC)") +
+  ylab("Logarithm of the D-value (log min)") +
+  theme_gray(base_size = 14) +
+  theme(legend.title = element_blank(),
+        legend.text = element_text(size = 14),
+        panel.grid = element_line(colour = "gray80"),
+        panel.background = element_rect(fill = "gray85")
+        # panel.border = element_rect(colour = "green")
+  ) 
+
+p2
+  
+p <- ggarrange(p1, p2, 
+          labels = "AUTO",
+          common.legend = TRUE,
+          legend = "right")
+
+ggsave(p, filename = "Figure1.png", width = 14, height = 6,
+       bg = "white")
  
 ## Rapid experimental bias - Figure 5
 
@@ -137,40 +239,40 @@ n_steps <- 5
 step_size <- 2
 
 p <- (0:n_steps) %>%
-    set_names(., (0:n_steps)*step_size) %>%
-    map(.,
-        ~ list(model_left = filter(d_final, temp > (50 + .*step_size)),
-               model_right = filter(d_final, temp < (70 - .*step_size))
-               )
-        ) %>%
-    # map(., 
-    #     ~ list(model_left = nls(logD ~ logDref - (temp - 60)/z,
-    #                             start = list(logDref = 0, z = 5), 
-    #                             data = .$model_left) %>% tidy,
-    #            model_right = nls(logD ~ logDref - (temp - 60)/z,
-    #                              start = list(logDref = 0, z = 5), 
-    #                              data = .$model_right) %>% tidy
-    #            )
-    #     ) %>%
-    map(.,
-        ~ list(model_left = lm(logD ~ temp, data = .$model_left) %>% tidy,
-               model_right = lm(logD ~ temp, data = .$model_right) %>% tidy)
-        ) %>%
-    map(.,
-        ~ imap_dfr(., ~ mutate(.x, model = .y))
-        ) %>%
-    imap_dfr(., ~ mutate(.x, step = as.numeric(.y))) %>%
-    # filter(term == "z") %>%
-    filter(term == "temp") %>%
-    ggplot(aes(x = step, y = estimate, colour = model)) +
-    geom_point() +
-    geom_line() +
-    geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error),
-                  width = .5, size = 1) +
-    xlab("Size of the shift (ºC)") + 
-    ylab("Estimated slope (1/ºC)") +
-    theme_bw(base_size = 14) +
-    theme(legend.position = "none")
+  set_names(., (0:n_steps)*step_size) %>%
+  map(.,
+      ~ list(model_left = filter(d_final, temp >= (50 + .*step_size)),
+             model_right = filter(d_final, temp <= (70 - .*step_size), temp >= 50)
+      )
+  ) %>%
+  # map(., 
+  #     ~ list(model_left = nls(logD ~ logDref - (temp - 60)/z,
+  #                             start = list(logDref = 0, z = 5), 
+  #                             data = .$model_left) %>% tidy,
+  #            model_right = nls(logD ~ logDref - (temp - 60)/z,
+  #                              start = list(logDref = 0, z = 5), 
+  #                              data = .$model_right) %>% tidy
+  #            )
+  #     ) %>%
+  map(.,
+      ~ list(model_left = lm(logD ~ temp, data = .$model_left) %>% tidy,
+             model_right = lm(logD ~ temp, data = .$model_right) %>% tidy)
+  ) %>%
+  map(.,
+      ~ imap_dfr(., ~ mutate(.x, model = .y))
+  ) %>%
+  imap_dfr(., ~ mutate(.x, step = as.numeric(.y))) %>%
+# filter(term == "z") %>%
+  filter(term == "temp") %>%
+  ggplot(aes(x = step, y = estimate, colour = model)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin = estimate - std.error, ymax = estimate + std.error),
+                width = .5, size = 1) +
+  xlab("Size of the shift (ºC)") + 
+  ylab("Estimated slope (1/ºC)") +
+  theme_bw(base_size = 14) +
+  theme(legend.position = "none")
 
 ggsave(p, filename = "Figure5.png",
        width = 9, height = 6)
@@ -375,9 +477,23 @@ lin_model <- stan(file = "lineal_inactivation.stan",
                   iter = 2000
 )
 
+set.seed(12412)
+
+mix_model <- stan(file = "mixed_effects_inactivation.stan",
+                 data = list(temperature = d_final$temp,
+                             logD = d_final$logD,
+                             refTemp = x_ref,
+                             N = nrow(d_final),
+                             J = d_final$full_ref %>% unique() %>% length(),
+                             study_id = d_final$full_ref %>% as.factor() %>% as.numeric()
+                 ),
+                 iter = 2000
+)
+
 ## Comparison of the posterior distributions
 
 list(Truncated = trunc_model,
+     Mixed = mix_model,
      Classical = lin_model) %>%
     map(as.data.frame) %>%
     imap_dfr(., ~ mutate(.x, model = .y)) %>%
@@ -389,6 +505,7 @@ list(Truncated = trunc_model,
 
 
 list(Truncated = trunc_model,
+     Mixed = mix_model,
      Classical = lin_model) %>%
     map(as.data.frame) %>%
     imap_dfr(., ~ mutate(.x, model = .y)) %>%
@@ -406,6 +523,7 @@ list(Truncated = trunc_model,
 set.seed(12412)
 
 list(Truncated = trunc_model,
+     Mixed = mix_model,
      Classical = lin_model) %>%
     map(as.data.frame) %>%
     imap_dfr(., ~ mutate(.x, model = .y)) %>%
@@ -413,14 +531,16 @@ list(Truncated = trunc_model,
     # mutate(logD130 = logDref - (130-x_ref)/z) %>%
     gather(par, value, -model) %>%
     group_by(par, model) %>%
-    summarize(mean(value), sd(value))
+    summarize(mean(value), sd(value)) %>%
+  View()
 
 ## Figure 6
 
 set.seed(12412)
 
 p <- list(`Truncated model` = trunc_model,
-     `Classical model` = lin_model) %>%
+          `Mixed-effects model` = mix_model,
+     `Nonlinear model` = lin_model) %>%
     map(as.data.frame) %>%
     imap_dfr(., ~ mutate(.x, model = .y)) %>%
     select(-lp__) %>%
@@ -454,15 +574,17 @@ p <- list(`Truncated model` = trunc_model,
     #            inherit.aes = FALSE) +
     theme_bw() +
     xlab("Temperature (ºC)") + ylab("Logarithm of the D-value (log min)") +
-    theme(legend.position = "none",
+    theme(# legend.position = "none",
           legend.title = element_blank(),
           axis.text = element_text(size = 14),
           axis.title = element_text(size = 16),
-          legend.text = element_text(size = 14)) 
+          legend.text = element_text(size = 14))
 
+p + scale_color_aaas() + theme(legend.position = "top")
 
-ggsave(p, filename = "Figure6.png",
-       width = 9, height = 6)
+ggsave(p + scale_color_aaas() + theme(legend.position = "top"), 
+       filename = "Figure6.png",
+       width = 9, height = 7)
 
 ###
 
